@@ -187,6 +187,11 @@ function initBgDots(W: number, H: number): BgDot[] {
   });
 }
 
+// ─── Angle utilities (module scope for access from callbacks and render loop) ──
+function normalizeAngle(a: number): number {
+  return a - Math.round(a / (Math.PI * 2)) * Math.PI * 2;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Phase = 'idle' | 'playing' | 'levelclear' | 'gameover';
 
@@ -292,7 +297,7 @@ export function KnifeHitGame() {
     g.knifeTemplate = makeKnifeDots();
     g.preplacedTemplate = makePreplacedDots();
     g.stuckKnives = def.prePlaced.map(a => ({
-      stickAngle: a,
+      stickAngle: normalizeAngle(a),
       dots: makePreplacedDots(),
       preplaced: true,
     }));
@@ -336,13 +341,6 @@ export function KnifeHitGame() {
       throwKnife();
     }
   }, [startGame, throwKnife]);
-
-  // ── Collision check ───────────────────────────────────────────────────────
-  function normalizeAngle(a: number): number {
-    while (a > Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
-    return a;
-  }
 
   // ── Burst effect ──────────────────────────────────────────────────────────
   function spawnBurst(g: GameState, cx: number, cy: number, count: number): void {
@@ -445,6 +443,12 @@ export function KnifeHitGame() {
           drawDots(ctx, k.dots, rx, ry, knifeRot, g.frame, k.preplaced ? '#3d3a35' : '#1a1916', 1.0);
         }
 
+        // ── Ready knife (shown when no knife is flying) ───────────────────
+        if (!g.flyingKnife && g.phase === 'playing' && g.knivesLeft > 0) {
+          const bob = Math.sin(g.frame * 0.055) * 4;
+          drawDots(ctx, g.knifeTemplate, W / 2, H - 80 + bob, 0, g.frame, '#1a1916', 0.72);
+        }
+
         // ── Flying knife ──────────────────────────────────────────────────
         if (g.flyingKnife) {
           const fk = g.flyingKnife;
@@ -460,7 +464,7 @@ export function KnifeHitGame() {
             // Check collision with existing knives
             let hit = false;
             for (const k of g.stuckKnives) {
-              const diff = Math.abs(normalizeAngle(normStick - normalizeAngle(k.stickAngle)));
+              const diff = Math.abs(normalizeAngle(normStick - k.stickAngle));
               if (diff < MIN_ANGLE) { hit = true; break; }
             }
 
@@ -606,7 +610,10 @@ export function KnifeHitGame() {
       if (!provider) throw new Error('no wallet');
       try {
         await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
-      } catch { /* already on Base */ }
+      } catch (switchErr) {
+        if ((switchErr as { code?: number }).code === 4001) throw switchErr; // user rejected
+        // otherwise assume already on Base
+      }
 
       const { createWalletClient, custom } = await import('viem');
       const { base } = await import('viem/chains');
