@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', color: INK, fontSize: fz, fontWeight: 900, lineHeight: 0.85, letterSpacing: Math.round(fz * -0.03), fontFamily: 'Inter', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', color: INK, fontSize: fz, fontWeight: 700, lineHeight: 0.85, letterSpacing: Math.round(fz * -0.03), fontFamily: 'Inter', whiteSpace: 'nowrap' }}>
             {String(level)}
           </div>
           <div style={{ display: 'flex', color: MUTED, fontSize: 22, fontWeight: 700, marginTop: 18, fontFamily: 'Inter', whiteSpace: 'nowrap' }}>
