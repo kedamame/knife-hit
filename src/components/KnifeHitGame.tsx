@@ -441,6 +441,8 @@ export function KnifeHitGame() {
   }
 
   // ── Render loop ───────────────────────────────────────────────────────────
+  const loopFnRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -464,13 +466,15 @@ export function KnifeHitGame() {
       ctx.fillRect(0, 0, W, H);
 
       // ── Background dots ─────────────────────────────────────────────────
-      // Periodic cluster spawning
+      // Periodic cluster spawning — capped at 300 to prevent FPS degradation
       g.bgClusterTimer--;
       if (g.bgClusterTimer <= 0) {
         g.bgClusterTimer = 55 + Math.floor(Math.random() * 60);
-        const cx = 60 + Math.random() * (W - 120);
-        const cy = 60 + Math.random() * (H - 120);
-        g.bgDots.push(...spawnBgCluster(W, H, cx, cy, 12 + Math.floor(Math.random() * 10)));
+        if (g.bgDots.length < 300) {
+          const cx = 60 + Math.random() * (W - 120);
+          const cy = 60 + Math.random() * (H - 120);
+          g.bgDots.push(...spawnBgCluster(W, H, cx, cy, 12 + Math.floor(Math.random() * 10)));
+        }
       }
 
       ctx.fillStyle = '#0f0f0d';
@@ -616,10 +620,25 @@ export function KnifeHitGame() {
       rafRef.current = requestAnimationFrame(loop);
     };
 
+    loopFnRef.current = loop;
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initLevel]);
+
+  // ── Pause/resume RAF on tab visibility change ─────────────────────────────
+  useEffect(() => {
+    const onChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(rafRef.current);
+      } else {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(loopFnRef.current);
+      }
+    };
+    document.addEventListener('visibilitychange', onChange);
+    return () => document.removeEventListener('visibilitychange', onChange);
+  }, []);
 
   // ── Resize observer ───────────────────────────────────────────────────────
   useEffect(() => {
