@@ -20,10 +20,10 @@ export async function GET() {
       iconUrl: `${APP_URL}/icon.png`,
       splashImageUrl: `${APP_URL}/splash.png`,
       splashBackgroundColor: '#ede9df',
-      heroImageUrl: `${APP_URL}/og-image.png`,
+      heroImageUrl: `${APP_URL}/opengraph-image?v=2`,
       ogTitle: 'Knife Hit',
       ogDescription: "Tap to throw. Don't hit another knife.",
-      ogImageUrl: `${APP_URL}/og-image.png`,
+      ogImageUrl: `${APP_URL}/opengraph-image?v=2`,
       screenshotUrls: [
         `${APP_URL}/screenshot1.png`,
         `${APP_URL}/screenshot2.png`,

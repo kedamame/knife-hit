@@ -6,7 +6,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://your-app.vercel.app'
 
 const miniAppEmbed = {
   version: '1',
-  imageUrl: `${APP_URL}/opengraph-image`,
+  imageUrl: `${APP_URL}/opengraph-image?v=2`,
   button: {
     title: 'Play Knife Hit',
     action: {
