@@ -6,9 +6,9 @@ export async function GET() {
   return NextResponse.json({
     accountAssociation: {
       // Generate these values at: https://warpcast.com/~/developers/mini-apps
-      header:    process.env.FARCASTER_HEADER    ?? '',
-      payload:   process.env.FARCASTER_PAYLOAD   ?? '',
-      signature: process.env.FARCASTER_SIGNATURE ?? '',
+      header:    process.env.FARCASTER_HEADER    ?? 'eyJmaWQiOjIxMTE4OSwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDMxOTk5REZCMzI1NkQzMjNDQTA1N0RkMjBhREI1NkI4RUQ0NTE3NzQifQ',
+      payload:   process.env.FARCASTER_PAYLOAD   ?? 'eyJkb21haW4iOiJrbmlmZS1oaXQta2FwcGEudmVyY2VsLmFwcCJ9',
+      signature: process.env.FARCASTER_SIGNATURE ?? 'GNrbIa2WCP5qrFdnvS44xNnp33ufewCa7rLbdgqKcy5EriE2bJc4ultzvBntG8Ehog9YMyyUQkWnLGJytcg/2xw=',
     },
     miniapp: {
       version: '1',
