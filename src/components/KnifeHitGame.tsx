@@ -9,23 +9,89 @@ const HANDLE_LEN = 20;  // handle below insertion point
 const KNIFE_SPEED = 13; // px/frame while flying
 const MIN_ANGLE = 0.27; // ~15.5° minimum between knives
 
-// Level definitions
-interface LevelDef { knives: number; speed: number; prePlaced: number[] }
-const LEVELS: LevelDef[] = [
-  { knives: 5, speed: 0.018, prePlaced: [] },
-  { knives: 6, speed: 0.022, prePlaced: [Math.PI] },
-  { knives: 7, speed: 0.026, prePlaced: [Math.PI * 0.5, Math.PI * 1.5] },
-  { knives: 8, speed: 0.030, prePlaced: [Math.PI * 0.67, Math.PI * 1.33] },
-  { knives: 9, speed: 0.034, prePlaced: [Math.PI * 0.4, Math.PI, Math.PI * 1.6] },
-];
-function getLevelDef(n: number): LevelDef {
-  if (n <= LEVELS.length) return LEVELS[n - 1];
-  const e = n - LEVELS.length;
-  return {
-    knives: 9 + e * 2,
-    speed: Math.min(0.034 + e * 0.004, 0.072),
-    prePlaced: [Math.PI * 0.5, Math.PI, Math.PI * 1.5],
+// ─── Level template system ────────────────────────────────────────────────────
+interface LevelTemplate {
+  speed: number;     // log rotation speed (rad/frame)
+  knives: number;    // knives the player throws this level
+  prePlaced: number; // count of obstacle knives pre-placed on log
+  reverse: boolean;  // direction reverses after half knives are thrown
+}
+
+// Seeded deterministic RNG (mulberry32)
+function makeRng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
   };
+}
+
+// Templates per tier (index 0=easiest … 4=expert)
+// Design principle: high speed → fewer knives/prePlaced; crowded → slower
+const TIER_POOL: LevelTemplate[][] = [
+  // Tier 0 — very easy: open log, slow rotation
+  [
+    { speed: 0.012, knives: 5, prePlaced: 0, reverse: false },
+    { speed: 0.015, knives: 5, prePlaced: 0, reverse: false },
+    { speed: 0.013, knives: 4, prePlaced: 1, reverse: false },
+  ],
+  // Tier 1 — easy: first variety (fast+few OR slow+obstacles)
+  [
+    { speed: 0.018, knives: 6, prePlaced: 0, reverse: false },
+    { speed: 0.026, knives: 4, prePlaced: 0, reverse: false },
+    { speed: 0.014, knives: 5, prePlaced: 2, reverse: false },
+    { speed: 0.020, knives: 5, prePlaced: 1, reverse: false },
+  ],
+  // Tier 2 — medium: reversal introduced
+  [
+    { speed: 0.022, knives: 6, prePlaced: 1, reverse: false },
+    { speed: 0.030, knives: 5, prePlaced: 0, reverse: false },
+    { speed: 0.016, knives: 4, prePlaced: 3, reverse: false },
+    { speed: 0.024, knives: 5, prePlaced: 2, reverse: false },
+    { speed: 0.020, knives: 5, prePlaced: 2, reverse: true  },
+  ],
+  // Tier 3 — hard
+  [
+    { speed: 0.028, knives: 5, prePlaced: 2, reverse: false },
+    { speed: 0.034, knives: 4, prePlaced: 1, reverse: false },
+    { speed: 0.018, knives: 4, prePlaced: 4, reverse: false },
+    { speed: 0.026, knives: 6, prePlaced: 2, reverse: true  },
+    { speed: 0.032, knives: 4, prePlaced: 2, reverse: false },
+  ],
+  // Tier 4 — expert
+  [
+    { speed: 0.036, knives: 4, prePlaced: 3, reverse: false },
+    { speed: 0.022, knives: 4, prePlaced: 5, reverse: false },
+    { speed: 0.032, knives: 5, prePlaced: 2, reverse: true  },
+    { speed: 0.030, knives: 5, prePlaced: 3, reverse: false },
+    { speed: 0.038, knives: 4, prePlaced: 2, reverse: false },
+  ],
+];
+
+function levelToTier(level: number): number {
+  if (level <= 2)  return 0;
+  if (level <= 5)  return 1;
+  if (level <= 9)  return 2;
+  if (level <= 14) return 3;
+  return 4;
+}
+
+function pickTemplate(level: number, rng: () => number): LevelTemplate {
+  const pool = TIER_POOL[levelToTier(level)];
+  return pool[Math.floor(rng() * pool.length)];
+}
+
+// Even distribution + random jitter, avoiding angle 0 (impact point)
+function generatePrePlacedAngles(count: number, rng: () => number): number[] {
+  if (count === 0) return [];
+  const step = (Math.PI * 2) / count;
+  const offset = Math.PI * (0.3 + rng() * 1.4); // avoid angle 0 zone
+  return Array.from({ length: count }, (_, i) => {
+    const jitter = (rng() - 0.5) * step * 0.35;
+    return normalizeAngle(offset + i * step + jitter);
+  });
 }
 
 // ─── Dot types ────────────────────────────────────────────────────────────────
@@ -226,6 +292,10 @@ interface GameState {
   stuckKnives: StuckKnife[];
   flyingKnives: FlyingKnife[];
   knivesLeft: number;
+  initialKnives: number;
+  levelReverse: boolean;
+  levelReversed: boolean;
+  rng: () => number;
   bursts: Burst[];
   levelClearTimer: number; // frames countdown
   bgDots: BgDot[];
@@ -252,6 +322,10 @@ export function KnifeHitGame() {
     stuckKnives: [],
     flyingKnives: [],
     knivesLeft: 5,
+    initialKnives: 5,
+    levelReverse: false,
+    levelReversed: false,
+    rng: () => 0,
     bursts: [],
     levelClearTimer: 0,
     bgDots: [],
@@ -288,24 +362,28 @@ export function KnifeHitGame() {
   // ── Initialize level ──────────────────────────────────────────────────────
   const initLevel = useCallback((levelNum: number) => {
     const g = G.current;
-    const def = getLevelDef(levelNum);
+    const tmpl = pickTemplate(levelNum, g.rng);
+    const angles = generatePrePlacedAngles(tmpl.prePlaced, g.rng);
     g.level = levelNum;
     g.logAngle = 0;
-    g.logSpeed = def.speed;
+    g.logSpeed = tmpl.speed;
     g.logDir = 1;
     g.logDots = makeCircleDots(LOG_RADIUS);
     g.knifeTemplate = makeKnifeDots();
     g.preplacedTemplate = makePreplacedDots();
-    g.stuckKnives = def.prePlaced.map(a => ({
+    g.stuckKnives = angles.map(a => ({
       stickAngle: normalizeAngle(a),
       dots: makePreplacedDots(),
       preplaced: true,
     }));
     g.flyingKnives = [];
-    g.knivesLeft = def.knives;
+    g.knivesLeft = tmpl.knives;
+    g.initialKnives = tmpl.knives;
+    g.levelReverse = tmpl.reverse;
+    g.levelReversed = false;
     g.levelClearTimer = 0;
     setLevel(levelNum);
-    setKnivesLeft(def.knives);
+    setKnivesLeft(tmpl.knives);
   }, []);
 
   // ── Start / restart ───────────────────────────────────────────────────────
@@ -314,6 +392,7 @@ export function KnifeHitGame() {
     const g = G.current;
     g.phase = 'playing';
     g.bursts = [];
+    g.rng = makeRng(Date.now()); // fresh random sequence each game
     if (g.bgDots.length === 0) g.bgDots = initBgDots(g.W, g.H);
     initLevel(1);
     setPhase('playing');
@@ -428,6 +507,11 @@ export function KnifeHitGame() {
       if (g.phase !== 'idle') {
         // ── Log rotation ─────────────────────────────────────────────────
         if (g.phase === 'playing' || g.phase === 'levelclear') {
+          // Reversal: flip direction once half the knives have been thrown
+          if (g.levelReverse && !g.levelReversed && g.knivesLeft <= Math.floor(g.initialKnives / 2)) {
+            g.logDir = (g.logDir === 1 ? -1 : 1) as 1 | -1;
+            g.levelReversed = true;
+          }
           g.logAngle += g.logSpeed * g.logDir;
         }
 
