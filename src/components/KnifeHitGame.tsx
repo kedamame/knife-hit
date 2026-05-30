@@ -224,7 +224,7 @@ interface GameState {
   knifeTemplate: Dot[];
   preplacedTemplate: Dot[];
   stuckKnives: StuckKnife[];
-  flyingKnife: FlyingKnife | null;
+  flyingKnives: FlyingKnife[];
   knivesLeft: number;
   bursts: Burst[];
   levelClearTimer: number; // frames countdown
@@ -250,7 +250,7 @@ export function KnifeHitGame() {
     knifeTemplate: [],
     preplacedTemplate: [],
     stuckKnives: [],
-    flyingKnife: null,
+    flyingKnives: [],
     knivesLeft: 5,
     bursts: [],
     levelClearTimer: 0,
@@ -301,7 +301,7 @@ export function KnifeHitGame() {
       dots: makePreplacedDots(),
       preplaced: true,
     }));
-    g.flyingKnife = null;
+    g.flyingKnives = [];
     g.knivesLeft = def.knives;
     g.levelClearTimer = 0;
     setLevel(levelNum);
@@ -325,11 +325,13 @@ export function KnifeHitGame() {
   const throwKnife = useCallback(() => {
     const g = G.current;
     if (g.phase !== 'playing') return;
-    if (g.flyingKnife !== null) return;
-    g.flyingKnife = {
+    if (g.knivesLeft <= 0) return;
+    g.knivesLeft--;
+    setKnivesLeft(g.knivesLeft);
+    g.flyingKnives.push({
       y: g.H - 80,
       dots: [...g.knifeTemplate.map(d => ({ ...d }))],
-    };
+    });
   }, []);
 
   // ── Pointer handler ───────────────────────────────────────────────────────
@@ -443,60 +445,54 @@ export function KnifeHitGame() {
           drawDots(ctx, k.dots, rx, ry, knifeRot, g.frame, k.preplaced ? '#3d3a35' : '#1a1916', 1.0);
         }
 
-        // ── Ready knife (shown when no knife is flying) ───────────────────
-        if (!g.flyingKnife && g.phase === 'playing' && g.knivesLeft > 0) {
+        // ── Ready knife (shown when no knife is in flight) ────────────────
+        if (g.flyingKnives.length === 0 && g.phase === 'playing' && g.knivesLeft > 0) {
           const bob = Math.sin(g.frame * 0.055) * 4;
           drawDots(ctx, g.knifeTemplate, W / 2, H - 80 + bob, 0, g.frame, '#1a1916', 0.72);
         }
 
-        // ── Flying knife ──────────────────────────────────────────────────
-        if (g.flyingKnife) {
-          const fk = g.flyingKnife;
-          fk.y -= KNIFE_SPEED;
-
-          // Hit detection: when knife's blade tip reaches log surface
+        // ── Flying knives (rapid fire: multiple in flight) ────────────────
+        if (g.flyingKnives.length > 0) {
           const impactY = logCY + LOG_RADIUS;
-          if (fk.y - BLADE_LEN <= impactY) {
-            // Knife has reached the log
-            const stickAngle = -g.logAngle;
-            const normStick = normalizeAngle(stickAngle);
+          const remaining: FlyingKnife[] = [];
+          let gameOver = false;
 
-            // Check collision with existing knives
-            let hit = false;
-            for (const k of g.stuckKnives) {
-              const diff = Math.abs(normalizeAngle(normStick - k.stickAngle));
-              if (diff < MIN_ANGLE) { hit = true; break; }
-            }
+          for (const fk of g.flyingKnives) {
+            fk.y -= KNIFE_SPEED;
 
-            if (hit) {
-              // Game over - big burst at impact point
-              const impactX = logCX;
-              spawnBurst(g, impactX, impactY, 45);
-              g.flyingKnife = null;
-              g.phase = 'gameover';
-              setPhase('gameover');
-            } else {
-              // Stick knife
-              spawnBurst(g, logCX, impactY, 18);
-              g.stuckKnives.push({
-                stickAngle: normStick,
-                dots: [...fk.dots],
-                preplaced: false,
-              });
-              g.flyingKnife = null;
-              g.knivesLeft--;
-              setKnivesLeft(g.knivesLeft);
+            if (fk.y - BLADE_LEN <= impactY) {
+              // Knife reached the log
+              const normStick = normalizeAngle(-g.logAngle);
 
-              if (g.knivesLeft <= 0) {
-                // Level clear
-                g.phase = 'levelclear';
-                g.levelClearTimer = 80;
-                setPhase('levelclear');
+              let hit = false;
+              for (const k of g.stuckKnives) {
+                if (Math.abs(normalizeAngle(normStick - k.stickAngle)) < MIN_ANGLE) {
+                  hit = true; break;
+                }
               }
+
+              if (hit) {
+                spawnBurst(g, logCX, impactY, 45);
+                gameOver = true;
+              } else {
+                spawnBurst(g, logCX, impactY, 18);
+                g.stuckKnives.push({ stickAngle: normStick, dots: [...fk.dots], preplaced: false });
+              }
+            } else {
+              drawDots(ctx, fk.dots, W / 2, fk.y, 0, g.frame, '#1a1916', 1.0);
+              remaining.push(fk);
             }
-          } else {
-            // Still flying
-            drawDots(ctx, fk.dots, W / 2, fk.y, 0, g.frame, '#1a1916', 1.0);
+          }
+          g.flyingKnives = remaining;
+
+          if (gameOver) {
+            g.flyingKnives = [];
+            g.phase = 'gameover';
+            setPhase('gameover');
+          } else if (g.flyingKnives.length === 0 && g.knivesLeft === 0) {
+            g.phase = 'levelclear';
+            g.levelClearTimer = 80;
+            setPhase('levelclear');
           }
         }
 
