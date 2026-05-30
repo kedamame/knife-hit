@@ -643,11 +643,12 @@ export function KnifeHitGame() {
   const handleShare = useCallback(async () => {
     const lv = G.current.level;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+    const shareUrl = appUrl ? `${appUrl}/share?level=${lv}` : '';
     try {
       const { sdk } = await import('@farcaster/miniapp-sdk');
       await sdk.actions.composeCast({
         text: `I reached level ${lv} in Knife Hit! Can you beat me?`,
-        embeds: appUrl ? [appUrl] : [],
+        embeds: shareUrl ? [shareUrl] : [],
       });
     } catch { /* not in Farcaster or closed */ }
   }, []);
